@@ -1,0 +1,79 @@
+import WebDriver, {type Client} from 'webdriver';
+
+import {readBooleanEnv} from './env.js';
+import {redactUrlCredentials} from './sensitive.js';
+import {withQuietWebDriverLogging} from './webdriver-client-options.js';
+
+export interface RemoteAttachOptions {
+  remoteServerUrl: string;
+  sessionId: string;
+  capabilities: Record<string, unknown>;
+}
+
+/**
+ * Resolve the port to use for a given URL.
+ *
+ * Defaults to 443 for https and 80 for http when no explicit port is set.
+ */
+export function getPortFromUrl(url: URL): number {
+  return Number(url.port) || (url.protocol === 'https:' ? 443 : 80);
+}
+
+/**
+ * Validate a remote Appium server URL and an optional deployment allowlist.
+ *
+ * The allowlist can only narrow the built-in HTTP(S)-only policy. Queries and
+ * fragments are rejected because WebDriver requests use the URL as a base path.
+ * This validates the supplied URL only. Destinations selected by HTTP redirects,
+ * direct-connect metadata, or BiDi webSocketUrl are handled by the WebDriver
+ * client. Intercepting or modifying that library's internal transport is outside
+ * appium-mcp's scope; operators must trust the allowed server and its responses.
+ * REMOTE_SERVER_ENABLE_DIRECT_CONNECT exposes the client's public opt-out for
+ * direct connect, but does not control redirects or BiDi connections.
+ */
+export function validateRemoteServerUrl(remoteServerUrl: string, regexRule?: string): void {
+  const invalidUrl = (): Error => new Error(`Invalid remoteServerUrl: ${redactUrlCredentials(remoteServerUrl)}.`);
+
+  let parsed: URL;
+  try {
+    parsed = new URL(remoteServerUrl);
+  } catch {
+    throw invalidUrl();
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname || parsed.search || parsed.hash) {
+    throw invalidUrl();
+  }
+
+  if (regexRule && !new RegExp(regexRule).test(remoteServerUrl)) {
+    throw invalidUrl();
+  }
+}
+
+/**
+ * Attach to an existing remote Appium session given its server URL and id.
+ *
+ * Centralises the parsing of protocol, hostname, port and credentials from
+ * the URL so multiple call sites (explicit `action=attach` and the
+ * cache-miss rehydrate path in `resolveDriver`) share a single
+ * implementation.
+ */
+export async function attachToRemoteSession(options: RemoteAttachOptions): Promise<Client> {
+  const url = new URL(options.remoteServerUrl);
+  const protocol = url.protocol.replace(':', '');
+  const port = getPortFromUrl(url);
+  const user = url.username ? decodeURIComponent(url.username) : undefined;
+  const key = url.password ? decodeURIComponent(url.password) : undefined;
+  return WebDriver.attachToSession(
+    withQuietWebDriverLogging({
+      sessionId: options.sessionId,
+      enableDirectConnect: readBooleanEnv('REMOTE_SERVER_ENABLE_DIRECT_CONNECT', true),
+      protocol,
+      hostname: url.hostname,
+      port,
+      path: url.pathname,
+      capabilities: options.capabilities,
+      ...(user && key ? {user, key} : {}),
+    }),
+  );
+}

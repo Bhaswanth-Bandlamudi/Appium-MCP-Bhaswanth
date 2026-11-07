@@ -1,0 +1,56 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "11:00"
+
+    open-pull-requests-limit: 10
+
+    groups:
+      appium:
+        applies-to: version-updates
+        patterns:
+          - "appium-*"
+          - "@appium/*"
+        update-types:
+          - minor
+          - patch
+
+      jest:
+        applies-to: version-updates
+        patterns:
+          - "jest"
+          - "@jest/*"
+        update-types:
+          - minor
+          - patch
+
+      opentelemetry:
+        applies-to: version-updates
+        patterns:
+          - "@opentelemetry/*"
+        update-types:
+          - minor
+          - patch
+
+      dev-dependencies:
+        applies-to: version-updates
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "11:00"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "ci"
+      include: "scope"
